@@ -1,19 +1,67 @@
 #!/usr/bin/env python3
 """
 Minimal OSIRIS entrypoint wrapper.
-Calls osiris_launcher.main from the osiris-cli package so users can run `./osiris run` or `./osiris demo`.
+Intercepts `intent` subcommand to run the deterministic recursive decomposer prototype.
+Delegates all other commands to osiris_launcher.main from osiris-cli.
 """
 import sys
+import os
 from os import path
+import json
 
-# Ensure the osiris-cli package is importable
+# Ensure local modules and osiris-cli are importable
+sys.path.insert(0, "/home/enki")
 sys.path.insert(0, "/home/enki/osiris-cli")
 
-try:
-    from osiris_launcher import main
-except Exception as e:
-    print("Error importing osiris_launcher:", e)
-    sys.exit(1)
 
-if __name__ == "__main__":
-    main()
+def handle_intent(argv):
+    import argparse
+    parser = argparse.ArgumentParser(prog='osiris intent', add_help=False)
+    parser.add_argument('--text', required=True, help='Natural language instruction')
+    parser.add_argument('--dry-run', action='store_true', help='Print intent graph without executing')
+    parser.add_argument('--execute', action='store_true', help='Execute leaf actions in plan (requires --confirm)')
+    parser.add_argument('--confirm', action='store_true', help='Confirm execution (required with --execute)')
+
+    try:
+        args, _ = parser.parse_known_args(argv)
+    except SystemExit:
+        print('Invalid intent arguments')
+        return False
+
+    try:
+        from osiris_intent_recursive import decompose, execute_graph
+    except Exception as e:
+        print('Intent decomposer unavailable:', e)
+        return False
+
+    graph = decompose(args.text, target='.')
+    print(json.dumps(graph, indent=2))
+
+    if args.execute:
+        if not args.confirm:
+            print('\n✗ Execution requires --confirm. Aborting execution (dry-run).')
+        else:
+            res = execute_graph(graph, confirm=True)
+            print(json.dumps({'execution_results': res}, indent=2))
+    return True
+
+
+def main_wrapper():
+    # Intercept 'intent' subcommand
+    if len(sys.argv) > 1 and sys.argv[1] == 'intent':
+        handled = handle_intent(sys.argv[2:])
+        if handled:
+            sys.exit(0)
+
+    # Fallback: delegate to osiris_launcher
+    try:
+        from osiris_launcher import main as osiris_main
+    except Exception as e:
+        print('Error importing osiris_launcher:', e)
+        sys.exit(1)
+
+    osiris_main()
+
+
+if __name__ == '__main__':
+    main_wrapper()
