@@ -1,0 +1,17 @@
+{
+  "examples": [
+    {
+      "name": "Code analysis demo",
+      "input": "Analyze repository for security issues and produce a report",
+      "graph": {
+        "root": "n0",
+        "nodes": [
+          {"id":"n0","type":"intent","action":"analyze_repository","description":"Top-level intent","confidence":0.95,"children":["n1"]},
+          {"id":"n1","type":"action","action":"file_scan","description":"Scan files","inputs":{"target":"."},"children":["n2"]},
+          {"id":"n2","type":"action","action":"static_analysis","description":"Static heuristics","children":["n3"]},
+          {"id":"n3","type":"action","action":"report","description":"Create JSON report","exec":{"tool":"osiris-code-analysis-demo","path":"/home/enki/osiris-code-analysis-demo","args":[]},"children":[]}
+        ]
+      }
+    }
+  ]
+}
