@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""
+Minimal OSIRIS entrypoint wrapper.
+Calls osiris_launcher.main from the osiris-cli package so users can run `./osiris run` or `./osiris demo`.
+"""
+import sys
+from os import path
+
+# Ensure the osiris-cli package is importable
+sys.path.insert(0, "/home/enki/osiris-cli")
+
+try:
+    from osiris_launcher import main
+except Exception as e:
+    print("Error importing osiris_launcher:", e)
+    sys.exit(1)
+
+if __name__ == "__main__":
+    main()

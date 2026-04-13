@@ -1,0 +1,12 @@
+osiris-pitch/
+osiris-venv/
+.venv/
+venv*/
+*.zip
+*.tar.gz
+*.whl
+*.egg-info
+__pycache__/
+*.pyc
+node_modules/
+.env
