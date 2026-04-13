@@ -27,6 +27,39 @@ def _match_analyze(text):
 def _match_research(text):
     return bool(re.search(r"\b(research|experiment|study|investigate|discover)\b", text, re.I))
 
+# Audit logging helpers
+AUDIT_PATH = os.environ.get('OSIRIS_AUDIT_PATH', 'osiris_intent_audit.jsonl')
+
+def _audit_append(entry, audit_path=None):
+    path = audit_path or os.environ.get('OSIRIS_AUDIT_PATH', AUDIT_PATH)
+    try:
+        with open(path, 'a') as f:
+            f.write(json.dumps(entry) + '\n')
+    except Exception:
+        # best-effort: do not fail decomposition on audit errors
+        pass
+
+def audit_decomposition(graph, rules_applied=None, audit_path=None):
+    entry = {
+        'type': 'decomposition',
+        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'graph_root': graph.get('root'),
+        'original_text': graph.get('original_text'),
+        'nodes_count': len(graph.get('nodes', [])),
+        'rules_applied': rules_applied if rules_applied is not None else [n.get('source') for n in graph.get('nodes', []) if n.get('source')],
+        'decomposer_version': 'osiris_intent_recursive_v1'
+    }
+    _audit_append(entry, audit_path)
+
+def audit_execution(graph, results, audit_path=None):
+    entry = {
+        'type': 'execution',
+        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        'graph_root': graph.get('root'),
+        'execution_results': results
+    }
+    _audit_append(entry, audit_path)
+
 
 def decompose(text, target=None):
     text = text.strip()
@@ -82,6 +115,11 @@ def decompose(text, target=None):
         n2['children'] = [n3_id]
         nodes = [n0, n1, n2, n3]
         graph = {'root': root_id, 'nodes': nodes, 'created_at': created_at, 'original_text': text}
+        # Audit decomposition
+        try:
+            audit_decomposition(graph)
+        except Exception:
+            pass
         return graph
 
     elif _match_research(text):
@@ -115,17 +153,45 @@ def decompose(text, target=None):
         n0['children'] = [n1_id, n2_id]
         nodes = [n0, n1, n2]
         graph = {'root': root_id, 'nodes': nodes, 'created_at': created_at, 'original_text': text}
+        # Audit decomposition
+        try:
+            audit_decomposition(graph)
+        except Exception:
+            pass
         return graph
 
     else:
         # fallback single-node graph
         root_id = gen_id()
         n0 = {'id': root_id, 'type': 'intent', 'action': 'unknown', 'description': text, 'confidence': 0.3, 'children': []}
-        return {'root': root_id, 'nodes': [n0], 'created_at': created_at, 'original_text': text}
+        graph = {'root': root_id, 'nodes': [n0], 'created_at': created_at, 'original_text': text}
+        try:
+            audit_decomposition(graph)
+        except Exception:
+            pass
+        return graph
 
 
 def execute_graph(graph, confirm=False):
-    """Execute leaf nodes that contain exec mapping. Requires explicit confirmation."""
+    """
+    Execute leaf nodes that contain exec mapping. Prefer safe adapter when available.
+    Requires explicit confirmation.
+    """
+    # Try safe adapter first (deterministic, audit-friendly)
+    try:
+        from osiris_executor_adapter import execute_graph as adapter_execute_graph
+        res = adapter_execute_graph(graph, confirm=confirm)
+        # audit execution if running confirmed
+        if confirm:
+            try:
+                audit_execution(graph, res)
+            except Exception:
+                pass
+        return res
+    except Exception:
+        # Adapter not available or failed — fall back to subprocess execution
+        pass
+
     results = []
     for node in graph.get('nodes', []):
         exec_info = node.get('exec')
@@ -141,6 +207,12 @@ def execute_graph(graph, confirm=False):
                     results.append({'node': node['id'], 'cmd': cmd, 'exit': proc.returncode, 'output': proc.stdout})
                 except Exception as e:
                     results.append({'node': node['id'], 'cmd': cmd, 'error': str(e)})
+    # audit fallback execution when confirmed
+    if confirm:
+        try:
+            audit_execution(graph, results)
+        except Exception:
+            pass
     return results
 
 

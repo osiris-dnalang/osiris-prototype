@@ -29,3 +29,35 @@ def test_wrapper_intent_dry_run():
     out = proc.stdout.strip()
     data = json.loads(out)
     assert 'root' in data
+
+
+def test_executor_adapter_audit():
+    import os
+    from os import path as _path
+    from osiris_executor_adapter import execute_graph
+
+    audit_path = '/tmp/osiris_audit_test.jsonl'
+    report_path = '/tmp/osiris_test_report.json'
+    try:
+        os.environ['OSIRIS_AUDIT_PATH'] = audit_path
+        graph = {'root': 'r1', 'nodes': [
+            {'id': 'n1', 'action': 'file_scan', 'inputs': {'target': '.'}},
+            {'id': 'n2', 'action': 'static_analysis'},
+            {'id': 'n3', 'action': 'report'}
+        ]}
+        res = execute_graph(graph, confirm=True, report_path=report_path)
+        assert isinstance(res, list)
+        assert _path.exists(report_path)
+        assert _path.exists(audit_path)
+        with open(audit_path, 'r') as f:
+            lines = [l.strip() for l in f if l.strip()]
+            assert any('"type": "execution"' in l for l in lines)
+    finally:
+        try:
+            os.remove(report_path)
+        except Exception:
+            pass
+        try:
+            os.remove(audit_path)
+        except Exception:
+            pass
