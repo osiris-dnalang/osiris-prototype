@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""
+OSIRIS Secure Local Code Analysis Demo
+Deterministic offline demo showing 3-agent orchestration: FileScanner -> Analyzer -> Reporter
+"""
+
+import re
+import json
+import time
+from pathlib import Path
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def agent_file_scanner(target=None):
+    """Return a list of (filename, code) to analyze."""
+    log("[FileScanner] scanning for code to analyze...")
+    time.sleep(0.15)
+    # If a real file path is provided, analyze it; otherwise use sample code
+    if target and Path(target).is_file():
+        code = Path(target).read_text()
+        return [(str(Path(target)), code)]
+
+    sample = '''
+import os
+
+def dangerous(data):
+    exec(data)  # dynamic execution
+
+password = "hunter2"
+# TODO: remove debug
+# subprocess call example
+# import subprocess
+# subprocess.Popen(["/bin/sh", "-c", "echo hi"]) 
+'''
+    return [("sample.py", sample)]
+
+
+def agent_analyzer(file_list):
+    """Perform lightweight static heuristics on code."""
+    log("[Analyzer] analyzing code...")
+    time.sleep(0.15)
+    findings = []
+    for fname, code in file_list:
+        if "exec(" in code or "eval(" in code:
+            findings.append({"file": fname, "type": "dynamic_exec", "detail": "use of exec/eval detected"})
+        if re.search(r'password\s*=\s*["\']', code):
+            findings.append({"file": fname, "type": "hardcoded_secret", "detail": "hardcoded password detected"})
+        if "TODO" in code:
+            findings.append({"file": fname, "type": "todo", "detail": "TODO comment present"})
+        if "subprocess" in code:
+            findings.append({"file": fname, "type": "subprocess", "detail": "subprocess usage detected"})
+
+        # Basic AST parse to check syntax
+        try:
+            import ast
+            ast.parse(code)
+        except Exception as e:
+            findings.append({"file": fname, "type": "syntax_error", "detail": str(e)})
+
+    return findings
+
+
+def agent_reporter(findings, out_file=None):
+    log("[Reporter] aggregating findings...")
+    time.sleep(0.1)
+    if out_file is None:
+        out_file = "osiris_code_analysis_results.json"
+
+    report = {
+        "summary": {
+            "files_analyzed": len(set(f["file"] for f in findings)) if findings else 1,
+            "issues": len(findings),
+        },
+        "findings": findings,
+    }
+
+    Path(out_file).write_text(json.dumps(report, indent=2))
+    log(f"[Reporter] report saved: {out_file}")
+    return report
+
+
+def main():
+    log("OSIRIS Secure Local Code Analysis Demo (offline deterministic)")
+
+    # 1. File scan
+    files = agent_file_scanner()
+    log(f"  → files found: {[f[0] for f in files]}")
+
+    # 2. Analyze
+    findings = agent_analyzer(files)
+
+    # 3. Report
+    if not findings:
+        log("  → No findings detected.")
+    else:
+        for f in findings:
+            log(f"  → FINDING: {f}")
+
+    report = agent_reporter(findings)
+
+    log("Demo complete. Final report (JSON):")
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == "__main__":
+    main()
